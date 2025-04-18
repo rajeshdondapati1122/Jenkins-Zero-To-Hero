@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app'
+        IMAGE_NAME = 'rajeshdondapati309/new-project-cicd:v1'
+        REGISTRY = 'docker.io'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                checkout scmGit(
+                    branches: [[name: '*/main']],
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        credentialsId: 'git-cred',
+                        url: 'https://github.com/rajeshdondapati1122/Jenkins-Zero-To-Hero.git'
+                    ]]
+                )
+            }
+        }
+
+        stage('Build, Archive, and Podman Tasks') {
+            steps {
+                script {
+                    dir(APP_DIR) {
+                        // 1. Build JAR
+                        sh 'mvn clean package'
+
+                        // 2. Archive JAR
+                        archiveArtifacts artifacts: 'target/*.jar', followSymlinks: false
+
+                        // 3. Podman build, push, and run
+                        withCredentials([usernamePassword(
+                            credentialsId: 'doc-cred',
+                            usernameVariable: 'REG_USER',
+                            passwordVariable: 'REG_PASS'
+                        )]) {
+                            sh '''
+                                set -e
+                                echo "🔐 Logging into Podman registry..."
+                                podman login -u $REG_USER -p $REG_PASS docker.io
+
+                                echo "🐳 Building the image..."
+                                podman build -t $IMAGE_NAME -f Dockerfile1 .
+
+                                echo "📤 Pushing the image..."
+                                podman push $IMAGE_NAME
+
+                                echo "🚀 Running container..."
+                                podman run -it -p 8533:8080 --name neytr1-container $IMAGE_NAME
+
+                                echo "📦 Listing containers..."
+                                podman ps -a
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
